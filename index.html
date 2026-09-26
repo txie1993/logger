@@ -35,9 +35,7 @@
     --border: #274a63;
   }
   * { box-sizing: border-box; }
-  html, body {
-    height: 100%;
-  }
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--bg);
@@ -74,9 +72,7 @@
     margin-bottom: 10px;
     outline: none;
   }
-  .note-input:focus {
-    border-color: var(--accent);
-  }
+  .note-input:focus { border-color: var(--accent); }
   .tap-btn {
     display: block;
     width: 100%;
@@ -90,65 +86,38 @@
     cursor: pointer;
     transition: transform 0.08s ease, background 0.15s ease;
   }
-  .tap-btn:hover { background: var(--accent-hover); }
-  .tap-btn:active { transform: scale(0.97); }
+  .tap-btn:disabled { opacity: 0.6; cursor: default; }
+  .tap-btn:hover:not(:disabled) { background: var(--accent-hover); }
+  .tap-btn:active:not(:disabled) { transform: scale(0.97); }
 
-  .count-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin: 20px 0 8px;
+  .status-row {
+    margin: 16px 0 6px;
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    text-align: center;
   }
-  .clear-btn {
-    background: none;
-    border: none;
-    color: var(--muted);
-    text-decoration: underline;
-    cursor: pointer;
-    font-size: 0.85rem;
-    padding: 4px;
-  }
-  .clear-btn:hover { color: var(--text); }
 
-  .log {
+  .latest {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    overflow: hidden;
+    padding: 20px 18px;
+    text-align: center;
   }
-  .log-entry {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.95rem;
+  .latest .time {
+    font-size: 1.25rem;
+    font-weight: 600;
   }
-  .log-entry:last-child { border-bottom: none; }
-  .log-entry .entry-top {
-    display: flex;
-    justify-content: space-between;
-  }
-  .log-entry .idx {
-    color: var(--muted);
-    margin-right: 10px;
-    min-width: 24px;
-  }
-  .log-entry .note {
+  .latest .note {
     display: block;
-    margin-top: 4px;
-    margin-left: 34px;
+    margin-top: 8px;
     color: var(--muted);
-    font-size: 0.88rem;
+    font-size: 0.95rem;
     word-break: break-word;
   }
-  .empty {
-    padding: 24px 16px;
-    text-align: center;
+  .latest .empty {
     color: var(--muted);
-    font-size: 0.9rem;
-  }
-  .max-w {
-    overflow-x: auto;
+    font-size: 0.95rem;
   }
 </style>
 </head>
@@ -156,62 +125,28 @@
   <div class="wrap">
     <h1>Tap to Log Time</h1>
     <input type="text" class="note-input" id="noteInput" placeholder="Add a note (optional)" maxlength="200">
-    <button class="tap-btn" id="tapBtn">Tap</button>
-    <div class="count-row">
-      <span id="countLabel">0 entries</span>
-      <button class="clear-btn" id="clearBtn">Clear log</button>
-    </div>
-    <div class="log max-w" id="log"></div>
+    <button class="tap-btn" id="tapBtn" disabled>Tap</button>
+    <div class="status-row" id="statusRow">Loading…</div>
+    <div class="latest" id="latest"><span class="empty">No taps yet — tap the button above.</span></div>
   </div>
 
 <script>
 (function () {
-  var STORAGE_KEY = 'tap-log-entries';
-  var entries = [];
+  // jsonbin.io config
+  var BIN_ID = '6ab76996ac6210605af6e491';
+  var API_KEY = '$2a$10$gp0onSov6I4D3P3KMtPEpuNp9eRZgpLNgAGC6eKhZOYrrAZwleQZG';
+  var BASE_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
 
-  try {
-    var raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) entries = JSON.parse(raw);
-  } catch (e) {
-    entries = [];
-  }
-
+  var LOCAL_KEY = 'tap-log-latest';
   var btn = document.getElementById('tapBtn');
-  var clearBtn = document.getElementById('clearBtn');
-  var logEl = document.getElementById('log');
-  var countLabel = document.getElementById('countLabel');
+  var latestEl = document.getElementById('latest');
+  var statusRow = document.getElementById('statusRow');
   var noteInput = document.getElementById('noteInput');
 
   function escapeHtml(str) {
     var div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
-  }
-
-  function save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-    } catch (e) {
-      // storage unavailable; entries still render for this session
-    }
-  }
-
-  function render() {
-    countLabel.textContent = entries.length + (entries.length === 1 ? ' entry' : ' entries');
-    if (entries.length === 0) {
-      logEl.innerHTML = '<div class="empty">No taps yet — tap the button above.</div>';
-      return;
-    }
-    var html = '';
-    for (var i = entries.length - 1; i >= 0; i--) {
-      var e = entries[i];
-      var noteHtml = e.note ? '<span class="note">' + escapeHtml(e.note) + '</span>' : '';
-      html += '<div class="log-entry">' +
-                '<div class="entry-top"><span><span class="idx">' + (i + 1) + '.</span>' + e.label + '</span></div>' +
-                noteHtml +
-              '</div>';
-    }
-    logEl.innerHTML = html;
   }
 
   function formatNow() {
@@ -222,13 +157,71 @@
     });
   }
 
+  function renderLatest(data) {
+    if (!data || !data.label) {
+      latestEl.innerHTML = '<span class="empty">No taps yet — tap the button above.</span>';
+      return;
+    }
+    var noteHtml = data.note ? '<span class="note">' + escapeHtml(data.note) + '</span>' : '';
+    latestEl.innerHTML = '<div class="time">' + escapeHtml(data.label) + '</div>' + noteHtml;
+  }
+
+  function saveLocal(data) {
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function loadLocal() {
+    try {
+      var raw = localStorage.getItem(LOCAL_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function fetchLatest() {
+    return fetch(BASE_URL + '/latest', {
+      headers: { 'X-Master-Key': API_KEY }
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('fetch failed');
+        return res.json();
+      })
+      .then(function (json) {
+        return json && json.record ? json.record : null;
+      });
+  }
+
+  function pushLatest(data) {
+    return fetch(BASE_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': API_KEY
+      },
+      body: JSON.stringify(data)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('write failed');
+      return data;
+    });
+  }
+
   function logTap() {
     var note = noteInput.value.trim();
-    entries.push({ ts: Date.now(), label: formatNow(), note: note });
-    save();
-    render();
+    var data = { ts: Date.now(), label: formatNow(), note: note };
+
+    // optimistic UI update
+    renderLatest(data);
     noteInput.value = '';
     noteInput.focus();
+
+    pushLatest(data)
+      .then(function () {
+        saveLocal(data);
+        statusRow.textContent = 'Synced across devices';
+      })
+      .catch(function () {
+        saveLocal(data);
+        statusRow.textContent = 'Saved on this device only (sync failed)';
+      });
   }
 
   btn.addEventListener('click', logTap);
@@ -236,16 +229,17 @@
     if (e.key === 'Enter') logTap();
   });
 
-  clearBtn.addEventListener('click', function () {
-    if (entries.length === 0) return;
-    if (confirm('Clear all logged times?')) {
-      entries = [];
-      save();
-      render();
-    }
-  });
-
-  render();
+  fetchLatest()
+    .then(function (data) {
+      renderLatest(data);
+      statusRow.textContent = 'Synced across devices';
+      btn.disabled = false;
+    })
+    .catch(function () {
+      renderLatest(loadLocal());
+      statusRow.textContent = 'Offline — showing last known local value';
+      btn.disabled = false;
+    });
 })();
 </script>
 </body>
